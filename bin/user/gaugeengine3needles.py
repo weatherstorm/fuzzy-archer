@@ -5,7 +5,7 @@
 #
 """Nick's custom generator for creating visual gauge image files from weewx.
 
-Tested on Weewx release 3.8.2.
+Tested on Weewx release 3.0.1.
 Tested with sqlite, may not work with other databases.
 
 WILL NOT WORK WITH Weewx prior to release 3.0.
@@ -98,6 +98,36 @@ Directions for use:
         history = 24
         bins = 16
         aggregate_type = None
+        
+    [[curImpTemp]]
+        minvalue = 0
+        maxvalue = 90
+        majorstep = 10
+        minorstep = 2
+        digitformat = %d
+        history = 24
+        bins = 90
+        data_binding = calduino_binding
+        input3 = selImpTemp		
+        data_binding3 = calduino_binding
+        input2 = retTemp		
+        data_binding2 = calduino_binding
+        
+        [[inTemp]]
+        minvalue = 5
+        maxvalue = 35
+        majorstep = 5
+        minorstep = 1
+        digitformat = %d
+        history = 24
+        bins = 90		
+		data_binding = wx_binding
+		input2 = selRoomTempHC1
+		type2 = marker
+		data_binding2 = calduino_binding
+		needle_outline_color2 = 0x5a4121
+		needle_fill_color2 = 0x5a4121
+		text_color2 = 0x5a4121		
 """
 
 import time
@@ -108,7 +138,7 @@ from PIL import Image
 import weeutil.weeutil
 import weewx.reportengine
 import weeplot.utilities
-import user.gauges
+import user.gauges3needles
 
 
 class GaugeGenerator(weewx.reportengine.ReportGenerator):
@@ -129,25 +159,6 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
         # Create a converter to get this into the desired units
         self.converter = weewx.units.Converter(self.units_dict['Groups'])
 
-        # Lookup the last reading in the archive
-        self.lastGoodStamp = self.db_manager.lastGoodStamp()
-
-        self.record_dict_vtd = None
-        batch_records = self.db_manager.genBatchRecords(self.lastGoodStamp - 1, self.lastGoodStamp)
-
-        try:
-            for rec in batch_records:
-                if self.record_dict_vtd is None:
-                    self.record_dict_vtd = rec
-
-        except:
-            syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: Cannot find the current reading")
-
-        # For checking development code deals with 'None' readings correctly
-        if self.gauge_dict.get('test_none_readings', None) is not None:
-            for key, value in self.record_dict_vtd.iteritems():
-                self.record_dict_vtd[key] = None
-
     def gen_gauges(self):
         """Generate the gauges."""
         t1 = time.time()
@@ -156,7 +167,75 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
         # Loop over each time span class (day, week, month, etc.):
         for gauge in self.gauge_dict.sections:
             plot_options = weeutil.weeutil.accumulateLeaves(self.gauge_dict[gauge])
+            
+            # Get DB Manager for a diferent data binding
+            binding = plot_options['data_binding']
+            self.db_manager =  self.db_binder.get_manager(binding)
+            
+            # Lookup the last reading in the archive
+            self.lastGoodStamp = self.db_manager.lastGoodStamp()
+            
+            self.record_dict_vtd = None
+            self.record_dict_vtd2 = None            
+            self.record_dict_vtd3 = None
+            
+            batch_records = self.db_manager.genBatchRecords(self.lastGoodStamp - 1, self.lastGoodStamp)
+            try:
+                for rec in batch_records:
 
+                    if self.record_dict_vtd is None:
+                        self.record_dict_vtd = rec
+
+            except:
+                syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: Cannot find the current reading")           
+            
+            try:
+                if plot_options['input2'] is not None: 
+                    # Get a second DB Manager for a diferent data binding
+                    binding2 = plot_options['data_binding2']          
+                    self.db_manager =  self.db_binder.get_manager(binding2)
+                    self.lastGoodStamp2 = self.db_manager.lastGoodStamp()
+                    batch_records2 = self.db_manager.genBatchRecords(self.lastGoodStamp2 - 1, self.lastGoodStamp2)
+                    try:
+                        for rec2 in batch_records2:
+                        
+                            if self.record_dict_vtd2 is None:
+                                self.record_dict_vtd2 = rec2
+                    except:
+                        syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: Cannot find the current reading")         
+                    self.db_manager =  self.db_binder.get_manager(binding)
+            except:
+                pass
+                
+            try:
+                if plot_options['input3'] is not None: 
+                    # Get a second DB Manager for a diferent data binding
+                    binding3 = plot_options['data_binding3']          
+                    self.db_manager =  self.db_binder.get_manager(binding3)
+                    self.lastGoodStamp3 = self.db_manager.lastGoodStamp()
+                    batch_records3 = self.db_manager.genBatchRecords(self.lastGoodStamp3 - 1, self.lastGoodStamp3)
+                    try:
+                        for rec3 in batch_records3:
+                        
+                            if self.record_dict_vtd3 is None:
+                                self.record_dict_vtd3 = rec3
+                    except:
+                        syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: Cannot find the current reading")         
+                    self.db_manager =  self.db_binder.get_manager(binding)
+            except:
+                pass
+                
+            # For checking development code deals with 'None' readings correctly
+            if self.gauge_dict.get('test_none_readings', None) is not None:
+                for key, value in self.record_dict_vtd.iteritems():
+                    self.record_dict_vtd[key] = None
+            
+            # For checking development code deals with 'None' readings correctly
+            if self.gauge_dict.get('test_none_readings', None) is not None:
+                for key, value in self.record_dict_vtd2.iteritems():
+                    self.record_dict_vtd2[key] = None
+
+            
             image_root = os.path.join(self.config_dict['WEEWX_ROOT'], plot_options['HTML_ROOT'])
             # Get the path of the file that the image is going to be saved to:
             img_file = os.path.join(image_root, '%sGauge.png' % gauge)
@@ -192,7 +271,9 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
         compass_labels = int(plot_options.get('compass_labels', 0))
         label_color = weeplot.utilities.tobgr(plot_options.get('label_color', '0x000000'))
         dial_color = weeplot.utilities.tobgr(plot_options.get('dial_color', '0x707070'))
-        needle_outline_color = weeplot.utilities.tobgr(plot_options.get('needle_outline_color', '0xb48242'))
+        needle_outline_color = weeplot.utilities.tobgr(plot_options.get('needle_outline_color', '0xb48242'))		
+        needle_outline_color2 = weeplot.utilities.tobgr(plot_options.get('needle_outline_color2', '0xadb442'))
+        needle_outline_color3 = weeplot.utilities.tobgr(plot_options.get('needle_outline_color3', '0x5a4121'))
 
         needle_fill_color = plot_options.get('needle_fill_color', None)
         if needle_fill_color is None or needle_fill_color == 'None' or needle_fill_color == 'Opaque':
@@ -200,7 +281,22 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
         else:
             needle_fill_color = weeplot.utilities.tobgr(needle_fill_color)
 
+        needle_fill_color2 = plot_options.get('needle_fill_color2', None)
+        if needle_fill_color2 is None or needle_fill_color2 == 'None' or needle_fill_color2 == 'Opaque':
+            needle_fill_color2 = None
+        else:
+            needle_fill_color2 = weeplot.utilities.tobgr(needle_fill_color2)	
+
+        needle_fill_color3 = plot_options.get('needle_fill_color3', None)
+        if needle_fill_color3 is None or needle_fill_color3 == 'None' or needle_fill_color3 == 'Opaque':
+            needle_fill_color3 = None
+        else:
+            needle_fill_color3 = weeplot.utilities.tobgr(needle_fill_color3)
+            
         text_color = weeplot.utilities.tobgr(plot_options.get('text_color', '0xb48242'))
+        text_color2 = weeplot.utilities.tobgr(plot_options.get('text_color2', '0xadb442'))
+        text_color3 = weeplot.utilities.tobgr(plot_options.get('text_color3', '0x5a4121'))
+        
         history_color = weeplot.utilities.tobgr(plot_options.get('history_color', '0x4242b4'))
 
         font_path = plot_options.get('font_path', '/usr/share/fonts/truetype/freefont/FreeSans.ttf')
@@ -238,7 +334,7 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
 
         # Create a new gauge instance using the gauges.py library
         if gaugename == 'windRose':
-            gauge = user.gauges.WindRoseGaugeDraw(image, background_color=back_color)
+            gauge = user.gauges3needles.WindRoseGaugeDraw(image, background_color=back_color)
             wind_units = self.converter.getTargetUnit('windSpeed')
         else:
             wind_units = None
@@ -267,17 +363,17 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
                 dial_arc = int(plot_options.get('dial_arc', 270))
                 offset_angle = int(plot_options.get('offset_angle', 0))
 
-            gauge = user.gauges.GaugeDraw(image, min_value, max_value, dial_range=dial_arc, offset_angle=offset_angle)
+            gauge = user.gauges3needles.GaugeDraw(image, min_value, max_value, dial_range=dial_arc, offset_angle=offset_angle)
 
         # windRose is a special case of gaugename since windRose is not the name of the archive column that
         # contains the data.
         columnname = gaugename if gaugename != 'windRose' else 'windDir'
-
+		
         # Find display unit of measure
         try:
             target_unit = self.units_dict['Groups'][weewx.units.obs_group_dict[columnname]]
         except:
-            syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: *** Could not find target unit of measure for gauge '%s' ***" % gaugename)
+            syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: *** Could not find target unit of measure for gauge '%s'. Obs group is: '%s'. ***" % (gaugename, weewx.units.obs_group_dict[columnname]))
             return
 
         # Deal with None readings / convert to target units
@@ -289,12 +385,55 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
                 value_now = float(none_value)
 
             syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s has no reading (%s)" % (gaugename,  value_now))
+            return
 
         else:
             # Convert it to units in skin.conf file
             value_now = weewx.units.convert(weewx.units.as_value_tuple(self.record_dict_vtd, columnname), target_unit)[0]
             syslog.syslog(syslog.LOG_DEBUG, "GaugeGenerator: %s reading = %s %s" % (gaugename, value_now, target_unit))
-
+        
+        # Get the second source of data for the gauge
+        if plot_options.get('input2') is not None:
+            columnname2 = plot_options.get('input2')
+            # Deal with None readings / convert to target units
+            if self.record_dict_vtd2[columnname2] is None:
+                none_value = plot_options.get('none_value', None)
+                if none_value is None:
+                    value_now2 = None
+                else:
+                    value_now2 = float(none_value)
+                        
+                syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s has no reading (%s)" % (columnname2,  value_now2))
+                return
+            else:
+                # Convert it to units in skin.conf file
+                value_now2 = weewx.units.convert(weewx.units.as_value_tuple(self.record_dict_vtd2, columnname2), target_unit)[0]
+                # syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s reading = %s %s" % (columnname2, value_now2, target_unit))   
+                # syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s reading = %s %s" % (gaugename, value_now, target_unit))                   
+        else:
+            value_now2 = None
+            
+        # Get the third source of data for the  gauge
+        if plot_options.get('input3') is not None:
+            columnname3 = plot_options.get('input3')
+            # Deal with None readings / convert to target units
+            if self.record_dict_vtd3[columnname3] is None:
+                none_value = plot_options.get('none_value', None)
+                if none_value is None:
+                    value_now3 = None
+                else:
+                    value_now3 = float(none_value)
+                        
+                syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s has no reading (%s)" % (columnname3,  value_now3))
+                return
+            else:
+                # Convert it to units in skin.conf file
+                value_now3 = weewx.units.convert(weewx.units.as_value_tuple(self.record_dict_vtd3, columnname3), target_unit)[0]
+                # syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s reading = %s %s" % (columnname2, value_now2, target_unit))   
+                # syslog.syslog(syslog.LOG_INFO, "GaugeGenerator: %s reading = %s %s" % (gaugename, value_now, target_unit))                   
+        else:
+            value_now3 = None
+                        
         label_format = self.units_dict['StringFormats'][target_unit]
         dial_format = plot_options.get('digitformat', label_format)
 
@@ -307,12 +446,53 @@ class GaugeGenerator(weewx.reportengine.ReportGenerator):
             label_text += unicode(self.units_dict['Labels'][target_unit], 'utf8')
         except:
             pass
-
+        
         gauge.add_text(label_text, text_font_size=label_font_size, text_font=font_path, text_color=text_color)
+        
+        if plot_options.get('input2') is not None:
+            if value_now2 is None:
+                label_text2 = '---'
+            else:
+                label_text2 = unicode(label_format % value_now2, 'utf8')
 
+            try:
+                label_text2 += unicode(self.units_dict['Labels'][target_unit], 'utf8')
+            except:
+                pass
+                
+            gauge.add_text2(label_text2, text_font_size=label_font_size, text_font=font_path, text_color=text_color2)
+
+        if plot_options.get('input3') is not None:
+            if value_now3 is None:
+                label_text3 = '---'
+            else:
+                label_text3 = unicode(label_format % value_now3, 'utf8')
+
+            try:
+                label_text3 += unicode(self.units_dict['Labels'][target_unit], 'utf8')
+            except:
+                pass
+                
+            gauge.add_text3(label_text3, text_font_size=label_font_size, text_font=font_path, text_color=text_color3)
+     
         if value_now is not None:
-            gauge.add_needle(float(value_now), needle_outline_color=needle_outline_color, needle_fill_color=needle_fill_color)
+            if plot_options.get('type') == 'marker':
+                gauge.add_marker(float(value_now), needle_outline_color=needle_outline_color, needle_fill_color=needle_fill_color)
+            else:
+                gauge.add_needle(float(value_now), needle_outline_color=needle_outline_color, needle_fill_color=needle_fill_color)
+                
+        if value_now2 is not None:
+            if plot_options.get('type2') == 'marker':
+                gauge.add_marker2(float(value_now2), needle_outline_color=needle_outline_color2, needle_fill_color=needle_fill_color2)
+            else:
+                gauge.add_needle2(float(value_now2), needle_outline_color=needle_outline_color2, needle_fill_color=needle_fill_color2)
 
+        if value_now3 is not None:
+            if plot_options.get('type3') == 'marker':
+                gauge.add_marker3(float(value_now3), needle_outline_color=needle_outline_color3, needle_fill_color=needle_fill_color3)
+            else:
+                gauge.add_needle3(float(value_now3), needle_outline_color=needle_outline_color3, needle_fill_color=needle_fill_color3)       
+          
         try:
             history = int(plot_options.get('history'))
         except:
